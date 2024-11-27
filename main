@@ -1,0 +1,37 @@
+from flask import Blueprint, render_template, session, request, flash
+from app.models import FileUpload
+from app.jobs.claims_processing import process_claims
+from app.jobs.bookings_processing import process_bookings
+
+main = Blueprint('main', __name__)
+
+@main.route('/')
+def dashboard():
+    if 'user_id' not in session:
+        flash('Please log in to access the dashboard.', 'error')
+        return redirect(url_for('auth.login'))
+
+    uploads = FileUpload.query.filter_by(user_id=session['user_id']).all()
+    return render_template('dashboard.html', uploads=uploads)
+
+@main.route('/upload', methods=['POST'])
+def upload_file():
+    file = request.files['file']
+    file_type = request.form['file_type']
+    user_id = session['user_id']
+
+    if file:
+        file_path = f"uploads/{file.filename}"
+        file.save(file_path)
+
+        new_upload = FileUpload(user_id=user_id, filename=file.filename, file_type=file_type)
+        db.session.add(new_upload)
+        db.session.commit()
+
+        if file_type == 'claims':
+            process_claims(file_path, user_id)
+        elif file_type == 'bookings':
+            process_bookings(file_path, user_id)
+
+        flash('File uploaded and processing started.', 'success')
+    return redirect(url_for('main.dashboard'))
